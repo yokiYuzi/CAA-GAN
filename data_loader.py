@@ -127,28 +127,21 @@ class FECGDataset(Dataset):
                         t_min = np.min(xx[0,max(coo-10,0):min(coo+10,127)])
                     
             
-            # plt.plot(yy.transpose(),'b')
-            # plt.show()
-            
-            # plt.plot(xx.transpose(),'r')
-            # plt.show()
-            min_max_scaler = MinMaxScaler(feature_range=[t_min, t_max], copy=False)           
+
+            min_max_scaler = MinMaxScaler(feature_range=(t_min, t_max), copy=False)           
             yy_minmax = min_max_scaler.fit_transform(yy.transpose())
             MECG_signal =  xx - yy_minmax.transpose()
             plt.plot(MECG_signal.transpose(),'r')
             plt.title('MECG')
-            plt.show()
+            #plt.show()
             
             M_index = np.argmax(MECG_signal,axis=-1)
             noise = MECG_signal.copy()
             noise[0,int(max(0,M_index-15)):int(min(MECG_signal.shape[-1],M_index+15))] = noise[0,max(0,M_index-15)]
             
-            # plt.plot(noise.transpose(),'r')
-            # plt.title('noise')
-            # plt.show()
             
             
-            min_max_scaler = MinMaxScaler(feature_range=[-1, 1], copy=False)           
+            min_max_scaler = MinMaxScaler(feature_range=(-1, 1), copy=False)           
             MECG_signal = min_max_scaler.fit_transform(MECG_signal.transpose()).transpose()
 
             AECG_signal = min_max_scaler.fit_transform(self.X_train[index,:,:].transpose()).transpose()
@@ -202,7 +195,7 @@ class FECGDataset(Dataset):
                         t_min = np.min(xx[0,max(coo-10,0):min(coo+10,127)])
                     
             
-            min_max_scaler = MinMaxScaler(feature_range=[t_min, t_max], copy=False)           
+            min_max_scaler = MinMaxScaler(feature_range=(t_min, t_max), copy=False)           
             yy_minmax = min_max_scaler.fit_transform(yy.transpose())
             MECG_signal =  xx - yy_minmax.transpose()
             
