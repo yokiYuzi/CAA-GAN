@@ -59,7 +59,7 @@ def main(config):
     train_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=0)
     
     test_dataset = FECGDataset(data_item, train=False)
-    test_dataloader = DataLoader(test_dataset, batch_size=config.batch_size, num_workers=0)
+    test_dataloader = DataLoader(test_dataset, batch_size=1, num_workers=0)
 
     # =================================================================================== #
     #                                 1. 训练阶段                                         #
