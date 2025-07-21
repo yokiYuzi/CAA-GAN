@@ -122,26 +122,28 @@ class Tester(object):
         true_fecg_sample = true_fecg[0, 0, :]
         pred_fecg_sample = pred_fecg[0, 0, :]
         
+        # --- 将这里的绘图标签改为英文 ---
+
+        # 修改后 ✔️:
         fig, axs = plt.subplots(3, 1, figsize=(12, 9), sharex=True)
-        fig.suptitle(f'样本 {batch_i} - 信号对比', fontsize=16)
+        fig.suptitle(f'Sample {batch_i} - Signal Comparison', fontsize=16)
         
-        axs[0].plot(aecg_sample, color='blue', label='输入 AECG')
-        axs[0].set_title("输入: 腹部心电信号 (AECG)")
-        axs[0].set_ylabel("幅值")
+        axs[0].plot(aecg_sample, color='blue', label='Input AECG')
+        axs[0].set_title("Input: Abdominal ECG (AECG)")
+        axs[0].set_ylabel("Amplitude")
         axs[0].legend(loc='upper right')
         
-        axs[1].plot(true_fecg_sample, color='green', label='真实 FECG')
-        axs[1].plot(pred_fecg_sample, color='red', linestyle='--', label='生成 FECG')
-        axs[1].set_title("对比: 真实 vs. 生成的胎儿心电信号")
-        axs[1].set_ylabel("幅值")
+        axs[1].plot(true_fecg_sample, color='green', label='Ground Truth FECG')
+        axs[1].plot(pred_fecg_sample, color='red', linestyle='--', label='Generated FECG')
+        axs[1].set_title("Comparison: Ground Truth vs. Generated Fetal ECG")
+        axs[1].set_ylabel("Amplitude")
         axs[1].legend(loc='upper right')
         
-        # 计算残差（误差）
         residual = true_fecg_sample - pred_fecg_sample
-        axs[2].plot(residual, color='purple', label='残差 (真实 - 生成)')
-        axs[2].set_title("残差图")
-        axs[2].set_xlabel("时间点")
-        axs[2].set_ylabel("幅值误差")
+        axs[2].plot(residual, color='purple', label='Residual (Truth - Generated)')
+        axs[2].set_title("Residual Plot")
+        axs[2].set_xlabel("Time Step")
+        axs[2].set_ylabel("Amplitude Error")
         axs[2].legend(loc='upper right')
         
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
