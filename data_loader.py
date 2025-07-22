@@ -176,23 +176,24 @@ class FECGDataset(Dataset):
     def get_test_item(self, index):
         """
         获取并处理一个测试样本。
-        测试流程简单得多，只需将输入和标签归一化到 (-1, 1) 即可。
+        这个新版本会同时返回归一化后的数据和原始数据。
         """
-        # 1. 获取原始信号
-        xx = self.signals[index, :, :]
-        yy = self.labels[index, :, :]
+        # 1. 获取原始信号 (这是我们的 "原始高清照片")
+        original_xx = self.signals[index, :, :]
+        original_yy = self.labels[index, :, :]
 
-        # 2. 将信号归一化到标准的 (-1, 1) 范围
+        # 2. 将信号归一化到(-1, 1)范围，用于输入模型 (这是 "黑白小图")
         scaler_standard = MinMaxScaler(feature_range=(-1, 1), copy=False)
-        AECG_signal = scaler_standard.fit_transform(xx.transpose()).transpose()
-        FECG_signal = scaler_standard.fit_transform(yy.transpose()).transpose()
+        AECG_signal_normalized = scaler_standard.fit_transform(original_xx.transpose()).transpose()
 
         # 3. 转换为Tensor并返回
-        # 为了与训练时的数据结构保持一致，我们用0作为占位符
-        return (torch.from_numpy(AECG_signal).type(torch.FloatTensor),
-                torch.from_numpy(FECG_signal).type(torch.FloatTensor),
-                torch.tensor(0), # 占位符
-                torch.tensor(0)) # 占位符
+        #    我们现在返回三个值：
+        #    - 归一化的AECG (给模型)
+        #    - 原始的FECG (给评估器)
+        #    - 占位符 (保持数据结构统一)
+        return (torch.from_numpy(AECG_signal_normalized).type(torch.FloatTensor),
+                torch.from_numpy(original_yy).type(torch.FloatTensor), # <--- 关键改动：传递原始yy
+                torch.tensor(0))
 
     def find_normalization_range(self, xx, fqrs):
         """一个辅助函数，用于执行寻找归一化范围的逻辑。"""
