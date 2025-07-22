@@ -8,6 +8,7 @@ from sagan_models import Generator
 from utils import denorm
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from  sklearn.preprocessing import MinMaxScaler
 
 # 确保 Matplotlib 使用 Agg 后端，避免在无界面的服务器上出错
 import matplotlib
@@ -67,50 +68,71 @@ class Tester(object):
 
     def test(self):
         """
-        执行完整的测试流程，并计算 R² 和 RMSE
+        执行完整的测试流程，包含逆归一化步骤，以计算真实性能指标。
         """
-        print("开始最终评估...")
+        print("开始最终评估（包含逆归一化）...")
         
-        all_true_fecg = []
-        all_pred_fecg = []
+        all_true_fecg_original = [] # 存储原始的真实信号
+        all_pred_fecg_denormalized = [] # 存储逆归一化后的生成信号
 
-        # torch.no_grad() 上下文管理器可以禁用梯度计算，在评估时能显著提高速度并减少内存占用
         with torch.no_grad():
             pbar = tqdm(self.data_loader, desc="模型评估中")
-            for i, (aecg_signals, fecg_signals, _, _) in enumerate(pbar):
-                aecg_signals = aecg_signals.to(device)
-                fecg_signals = fecg_signals.to(device)
-
-                # 生成预测信号
-                pred_fecg_signals = self.G_AECG2FECG(aecg_signals)
+            # --- 关键改动：现在dataloader会返回3个元素 ---
+            for i, (aecg_signals_normalized, fecg_signals_original, _) in enumerate(pbar):
                 
-                # 收集真实信号和预测信号的Numpy数组
-                all_true_fecg.append(fecg_signals.cpu().numpy())
-                all_pred_fecg.append(pred_fecg_signals.cpu().numpy())
+                # 将归一化的输入数据移动到GPU
+                aecg_signals_normalized = aecg_signals_normalized.to(device)
+
+                # 1. 模型生成归一化的预测信号 (输出 "黑白小图")
+                pred_fecg_normalized = self.G_AECG2FECG(aecg_signals_normalized)
+                
+                # 将数据转为Numpy数组以便处理
+                true_original_batch = fecg_signals_original.cpu().numpy()
+                pred_normalized_batch = pred_fecg_normalized.cpu().numpy()
+
+                # --- 关键步骤：对每个样本执行逆归一化 ---
+                for j in range(true_original_batch.shape[0]):
+                    true_sample = true_original_batch[j]
+                    pred_sample_normalized = pred_normalized_batch[j]
+                    
+                    # 创建一个临时的scaler，它的缩放范围由当前真实样本决定
+                    # 这一步是为了完美地逆转 `get_test_item` 中的操作
+                    temp_scaler = MinMaxScaler(feature_range=(-1, 1))
+                    temp_scaler.fit(true_sample.transpose()) # 用真实样本的转置来拟合
+                    
+                    # 2. 执行逆归一化 (将 "黑白小图" 还原成 "高清彩图")
+                    pred_sample_denormalized = temp_scaler.inverse_transform(pred_sample_normalized.transpose()).transpose()
+
+                    all_true_fecg_original.append(true_sample)
+                    all_pred_fecg_denormalized.append(pred_sample_denormalized)
 
                 # 可选：保存一些样本图像进行可视化比较
                 if i % self.config.sample_step == 0:
-                    self.save_sample_results(i, aecg_signals.cpu().numpy(), fecg_signals.cpu().numpy(), pred_fecg_signals.cpu().numpy())
+                    # 我们需要传递逆归一化后的信号给绘图函数
+                    self.save_sample_results(i, 
+                                             aecg_signals_normalized.cpu().numpy(), # 输入信号（归一化的）
+                                             true_original_batch,                 # 真实信号（原始的）
+                                             np.array(all_pred_fecg_denormalized[-true_original_batch.shape[0]:]) # 逆归一化的预测
+                                            )
+        
+        # 将所有样本合并
+        all_true_fecg_original = np.array(all_true_fecg_original)
+        all_pred_fecg_denormalized = np.array(all_pred_fecg_denormalized)
 
-        # 将所有批次的数据合并成一个大的数组
-        all_true_fecg = np.concatenate(all_true_fecg, axis=0)
-        all_pred_fecg = np.concatenate(all_pred_fecg, axis=0)
+        # 展平以计算指标
+        true_flat = all_true_fecg_original.flatten()
+        pred_flat = all_pred_fecg_denormalized.flatten()
 
-        # 为了计算指标，我们将信号展平为一维向量
-        true_flat = all_true_fecg.flatten()
-        pred_flat = all_pred_fecg.flatten()
-
-        # 计算评估指标
-        print("\n正在计算最终评估指标...")
+        # 3. 在原始信号空间计算指标
+        print("\n正在计算真实性能评估指标...")
         rmse = np.sqrt(mean_squared_error(true_flat, pred_flat))
         r2 = r2_score(true_flat, pred_flat)
 
-        # 打印格式化的结果
         print("="*40)
-        print("         模型性能评估报告")
+        print("         Model Performance Evaluation Report (Real Space)")
         print("="*40)
-        print(f"均方根误差 (RMSE): {rmse:.6f}")
-        print(f"R² (决定系数):    {r2:.6f}")
+        print(f"Root Mean Square Error (RMSE): {rmse:.6f}")
+        print(f"R² (Coefficient of Determination):    {r2:.6f}")
         print("="*40)
         print(f"评估完成。对比图像已保存至: {self.result_path}")
 
