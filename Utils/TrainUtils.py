@@ -1,89 +1,134 @@
-# Utils/TrainUtils.py
-
-from Utils.DataUtils import DataUtils, DataUtils_NIFECGDB
+import pyedflib
 import numpy as np
-from sklearn.model_selection import train_test_split
+from scipy import signal
+from scipy.signal import butter, filtfilt
+from sklearn.decomposition import FastICA
+from sklearn.preprocessing import scale
+import padasip as pa
+import wfdb
+import matplotlib.pyplot as plt
+from utils import denorm
 
-class TrainUtils():
-    def __init__(self):
-        self.dataUtils_NIFECGDB = DataUtils_NIFECGDB()
-        self.dataUtils = DataUtils()
 
-    # 【核心修正】我们将重写此方法，使其能够处理标注文件缺失的情况
-    def prepareData(self, delay=0, test_size=0.2, random_state=42):
-        print("正在加载和预处理所有数据...")
 
-        # 初始化用于存储所有有效数据的容器
-        all_ecg_data = []
-        all_fecg_data = []
-        all_fqrs_data = []
+
+
+class DataUtils:
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fileNames = ["r01.edf", "r04.edf", "r07.edf", "r08.edf", "r10.edf"]
+
+    def readData(self, sigNum, path="./ADFECGDB/"):
+        file_name = path + self.fileNames[sigNum]
+        f = pyedflib.EdfReader(file_name)
+        n = f.signals_in_file
+        # signal_labels = f.getSignalLabels()
+        abdECG = np.zeros((n - 1, f.getNSamples()[0]))
+        fetalECG = np.zeros((1, f.getNSamples()[0]))
+        fetalECG[0, :] = f.readSignal(0)
+        fetalECG[0, :] = scale(self.SignalFilter(self.butter_bandpass_filter(fetalECG, 1, 100, 1000)), axis=1)
+        for i in np.arange(1, n):
+            abdECG[i - 1, :] = f.readSignal(i)
+        abdECG = scale(self.SignalFilter(self.butter_bandpass_filter(abdECG, 1, 100, 1000)), axis=1)
+
+
+        # abdECG = self.normalize(signal.resample(abdECG, int(abdECG.shape[1] / 5), axis=1))
+        # fetalECG = self.normalize(signal.resample(fetalECG, int(fetalECG.shape[1] / 5), axis=1))
         
-        # 数据集中的文件索引
-        file_indices = [1, 4, 7, 8, 10]
-        current_total_length = 0
+        abdECG = signal.resample(abdECG, int(abdECG.shape[1] / 5), axis=1)
+        fetalECG = signal.resample(fetalECG, int(fetalECG.shape[1] / 5), axis=1)
+        
+        
 
-        # 遍历所有数据文件
-        for index in file_indices:
-            try:
-                ecg_single, fecg_single, fqrs_single = self.dataUtils.readData(index)
+        signal_annotation = wfdb.rdann(file_name, "qrs", sampfrom=0, sampto=60000*5)
+        fqrs_rpeaks = signal_annotation.sample
+        fqrs_rpeaks = np.asarray(np.floor_divide(fqrs_rpeaks,5),'int64')
+        
+        return abdECG, fetalECG,fqrs_rpeaks
 
-                # 【关键检查】如果找不到QRS标注文件，则跳过此数据记录
-                if fqrs_single is None:
-                    print(f"警告：找不到文件 r{index:02d}.qrs 的标注信息，将跳过此文件。")
-                    continue
+    def windowingSig(self, sig1, sig2, fqrs_rpeaks, windowSize=15):
+        signalLen = sig2.shape[1]
+        signalsWindow1 = [sig1[:, int(i):int(i + windowSize)].transpose() for i in range(0, signalLen - windowSize, windowSize)]
+        signalsWindow2 = [sig2[:, int(i):int(i + windowSize)].transpose() for i in range(0, signalLen - windowSize, windowSize)]
 
-                # 如果数据有效，则添加到列表中
-                all_ecg_data.append(ecg_single)
-                all_fecg_data.append(fecg_single)
-                # 根据已加载数据的总长度，校正新QRS坐标
-                all_fqrs_data.append(fqrs_single + current_total_length)
+        # fqrsWindows = np.zeros([len(signalsWindow2),1]).astype(int)
+        fqrsWindows = []
+        
+        ik = 0
+        for i in range(0, signalLen - windowSize, windowSize):
+            fqrs = []
+            
+            while (fqrs_rpeaks[ik] < int(i + windowSize)):
+                index = fqrs_rpeaks[ik]
+                # for index in fqrs_rpeaks:
+                if index in range (int(i),int(i + windowSize)):
+                    fqrs.append(index - int(i))
+                    # fqrsWindows[ik] = index - int(i)
+                    ik = ik +1
+            fqrsWindows.append(fqrs)
                 
-                # 更新当前已加载信号的总长度
-                current_total_length += ecg_single.shape[1]
-
-            except Exception as e:
-                print(f"加载文件 r{index:02d}.edf 时发生未知错误，将跳过: {e}")
-                continue
         
-        # 如果没有任何文件被成功加载，则抛出错误
-        if not all_ecg_data:
-            raise ValueError("严重错误：未能成功加载任何有效的数据和标注。请检查ADFECGDB数据集是否存在且完整（包含.edf和.qrs文件）。")
+        return signalsWindow1, signalsWindow2, fqrsWindows
 
-        # 将所有有效数据拼接成一个大的数组
-        ecgAll = np.concatenate(all_ecg_data, axis=1)
-        fecg = np.concatenate(all_fecg_data, axis=0)
-        fqrs_rpeaks = np.concatenate(all_fqrs_data, axis=0)
+    def adaptFilterOnSig(self, src, ref):
+        f = pa.filters.FilterNLMS(n=4, mu=0.1, w="random")
+        for index, sig in enumerate(src):
+            try:
+                y, e, w = f.run(ref[index][:, 0], sig)
+                ref[index][:, 0] = e
+            except:
+                pass
 
-        # 后续的窗口化处理现在是完全安全的
-        ecgWindows = self.dataUtils.data2window(ecgAll, size=128)
-        fecgWindows = self.dataUtils.data2window(fecg, size=128)
+        return ref
+
+    def calculateICA(self, sdSig, component=7):
+        ica = FastICA(n_components=component, max_iter=1000)
+        icaRes = []
+        for index, sig in enumerate(sdSig):
+            try:
+                icaSignal = np.array(ica.fit_transform(sig))
+                icaSignal = np.append(icaSignal, sig[:, range(2, 4)], axis=1)
+                icaRes.append(icaSignal)
+            except:
+                pass
+        return np.array(icaRes)
+
+    def createDelayRepetition(self, signal, numberDelay=4, delay=10):
+        signal = np.repeat(signal, numberDelay, axis=0)
+        for row in range(1, signal.shape[0]):
+            signal[row, :] = np.roll(signal[row, :], shift=delay * row)
+        return signal
+
+    def __butter_bandpass(self, lowcut, highcut, fs, order=5):
+        nyq = 0.5 * fs
+        low = lowcut / nyq
+        high = highcut / nyq
+        b, a = butter(order, [low, high], btype='band')
+        return b, a
+
+    def butter_bandpass_filter(self, data, lowcut, highcut, fs, order=3, axis=1):
+        b, a = self.__butter_bandpass(lowcut, highcut, fs, order=order)
+        y = filtfilt(b, a, data, axis=axis)
+        return y
+    
+    def SignalFilter(self,filtedData):
+        A = np.array([1,0,0,0,0,0,0,0,0,0,-0.854]); #梳状滤波器系数
+        B = np.array([0.927,0,0,0,0,0,0,0,0,0,-0.927]);
         
-        fqrs_rpeaks_pro = []
-        for i in range(len(ecgWindows)):
-            # 这行代码现在不会再因为 fqrs_rpeaks 是 None 而报错
-            coo = fqrs_rpeaks - i * 128
-            tmp = coo[(coo >= 0) & (coo < 128)]
-            fqrs_rpeaks_pro.append(tmp)
+        filtedData = signal.filtfilt(B, A, filtedData)
         
-        fecgWindows = np.expand_dims(fecgWindows, 1)
-        fqrs_rpeaks_pro = np.array(fqrs_rpeaks_pro, dtype=object)
-
-        # 使用 train_test_split 进行数据集划分
-        print(f"数据加载完成，总样本数: {len(ecgWindows)}")
-        print(f"即将按照 8:2 的比例随机分割数据集...")
-
-        X_train, X_test, Y_train, Y_test, fqrs_train, fqrs_test = train_test_split(
-            ecgWindows,
-            fecgWindows,
-            fqrs_rpeaks_pro,
-            test_size=test_size,
-            random_state=random_state
-        )
-
-        print("-" * 30)
-        print("数据集分割完成:")
-        print(f"训练集样本数: {len(X_train)}")
-        print(f"测试集样本数: {len(X_test)}")
-        print("-" * 30)
-        
-        return X_train, X_test, Y_train, Y_test, (fqrs_train, fqrs_test)
+        B1 = np.array([0.995,-1.8504,0.995]);# 陷波滤波器系数
+        A1 = np.array([1,-1.8505,0.99]);
+        filtedData = signal.filtfilt(B1, A1, filtedData)
+    
+        B2 = np.array([0.388,0.388]); #Wc = 180，3dB的截止频率
+        A2 = np.array([1,-0.42578]);
+        filtedData = signal.filtfilt(B2, A2, filtedData)
+        return filtedData
+    
+    
+    def normalize(self,v):
+        v_min = v.min(axis=1).reshape((v.shape[0],1))
+        v_max = v.max(axis=1).reshape((v.shape[0],1))
+        return (v - v_min) / (v_max-v_min)
