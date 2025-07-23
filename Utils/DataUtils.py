@@ -1,6 +1,8 @@
 import pyedflib
 import numpy as np
 import os
+# 【新增】导入官方推荐的 wfdb 库
+import wfdb
 
 DATA_ROOT_DIR = './ADFECGDB'
 
@@ -9,7 +11,6 @@ class DataUtils():
         pass
 
     def getFileName(self, index):
-        # 使用 zfill(2) 来正确格式化文件名，例如 r1 -> r01
         if index < 10:
             file_name = os.path.join(DATA_ROOT_DIR, 'r' + str(index).zfill(2) + '.edf')
         else:
@@ -34,32 +35,34 @@ class DataUtils():
         fecg = sigbufs[4]
 
         # 准备用于查找标注文件的基本名
-        ann_name = file_name.replace(".edf", "")
-        qrs_rpeaks = self.getQRS(ann_name, fecg)
+        ann_name_base = os.path.join(DATA_ROOT_DIR, 'r' + str(index).zfill(2))
+        qrs_rpeaks = self.getQRS_wfdb(ann_name_base, fecg)
         return ecgAll, fecg, qrs_rpeaks
 
-    # 【核心修正】只修改 getQRS 这一个方法
-    def getQRS(self, ann_name, fecg):
-        # 之前修正的文件名拼接是正确的
-        path = ann_name + '.edf.qrs'
-        
-        if not os.path.exists(path):
-            return None
-            
-        qrs_rpeaks = []
+    # 【核心修正】重写 getQRS 方法，使用 wfdb 库来读取二进制标注文件
+    def getQRS_wfdb(self, record_name, fecg):
+        """
+        使用 wfdb 库读取二进制的 .qrs 标注文件。
+        record_name: 记录文件的基本路径和名称 (例如 './ADFECGDB/r01')
+        """
         try:
-            # 【关键修正】在打开文件时，明确指定编码为 'latin-1'
-            with open(path, "r", encoding="latin-1") as f:
-                for line in f:
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        str_time = parts[0]
-                        qrs_rpeaks.append(int(float(str_time) * 1000))
-        except Exception as e:
-            print(f"读取标注文件 {path} 时发生错误: {e}")
-            return None # 如果读取失败，也返回None
+            # wfdb.rdann 会自动寻找 .qrs 文件并正确解析
+            annotation = wfdb.rdann(record_name, 'qrs')
+            # Annotation 对象的 .sample 属性包含了所有R波峰值的样本索引
+            qrs_rpeaks = annotation.sample
+            
+            # 将采样率从 1000Hz 转换为样本索引
+            # 注意: 此数据集的采样率为1000Hz，所以标注文件中的时间戳乘以1000即为样本索引
+            # wfdb库已经处理了这一点，直接返回的就是样本索引，无需转换
+            
+            return np.array(qrs_rpeaks)
 
-        return np.array(qrs_rpeaks)
+        except FileNotFoundError:
+            # 如果找不到 .qrs 文件，返回 None
+            return None
+        except Exception as e:
+            print(f"使用 wfdb 读取标注文件 {record_name}.qrs 时发生错误: {e}")
+            return None
 
     def data2window(self, data, size=128):
         shape = data.shape
