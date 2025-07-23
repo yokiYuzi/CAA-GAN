@@ -6,7 +6,7 @@ import re
 from parameter import *
 from trainer import Trainer
 from Tester import Tester  # 导入我们新建的 Tester 类
-from data_loader import Data_Loader,Data_Item
+from data_loader import Data_Item
 from torch.backends import cudnn
 from utils import make_folder
 from torch.utils.data import DataLoader
