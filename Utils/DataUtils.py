@@ -133,3 +133,7 @@ class DataUtils:
         v_max = v.max(axis=1).reshape((v.shape[0],1))
         return (v - v_min) / (v_max-v_min)
 
+class DataUtils_NIFECGDB():
+    """一个空的占位符类，用于解决 TrainUtils.py 中的导入依赖错误。"""
+    def __init__(self):
+        pass

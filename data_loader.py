@@ -1,106 +1,55 @@
-# data_loader.py
-
 import torch
 import numpy as np
 from torch.utils.data import Dataset
 from Utils.DataUtils import DataUtils
 from Utils.TrainUtils import TrainUtils
 from sklearn.preprocessing import MinMaxScaler
-# 导入我们需要的 train_test_split 函数
-from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
-
-# =================================================================================== #
-#                  【核心修正】请确保 Data_Item 类是下面的样子                      #
-# =================================================================================== #
+# 【核心修改】只修改 Data_Item 类
 class Data_Item():
-    """
-    这个类作为数据容器，通过调用 Data_Loader 来获取分割好的数据集。
-    """
     def __init__(self):
-        # 这一行必须能够接收 get_split_data 返回的全部六个部分
-        self.X_train, self.X_test, self.Y_train, self.Y_test, self.fqrs_train, self.fqrs_test = Data_Loader().get_split_data()
-
-
-class Data_Loader():
-    """
-    数据加载和处理的总指挥。
-    这个类现在负责按比例分割数据集。
-    """
-    def __init__(self):
-        self.dataUtils = DataUtils()
         self.trainUtils = TrainUtils()
+        # 接收 prepareData 返回的5个值
+        X_train_all, X_test_all, Y_train_all, Y_test_all, fqrs_tuple = self.trainUtils.prepareData(delay=5)
         
-    def get_split_data(self, test_size=0.2, random_state=42):
-        """
-        一个全新的方法，用于加载、处理并按比例分割数据。
-        """
-        print("正在加载和预处理所有数据...")
-        ecg_windows, fecg_windows, fqrs_rpeaks = self.trainUtils.prepareData(delay=5)
-        
-        print(f"数据加载完成，总样本数: {len(ecg_windows)}")
-        print(f"即将按照 8:2 的比例分割数据集...")
-
-        # 使用 train_test_split 函数进行分割
-        X_train, X_test, Y_train, Y_test, fqrs_train, fqrs_test = train_test_split(
-            ecg_windows,
-            fecg_windows,
-            fqrs_rpeaks,
-            test_size=test_size,
-            random_state=random_state
-        )
-
-        print("-" * 30)
-        print("数据集分割完成:")
-        print(f"训练集样本数: {len(X_train)}")
-        print(f"测试集样本数: {len(X_test)}")
-        print("-" * 30)
-
-        # 返回分割好的六个部分
-        return X_train, X_test, Y_train, Y_test, fqrs_train, fqrs_test
+        # 将接收到的值赋给 self
+        self.X_train = X_train_all
+        self.X_test = X_test_all
+        self.Y_train = Y_train_all
+        self.Y_test = Y_test_all
+        # 解开包含 fqrs 的元组
+        self.fqrs_train, self.fqrs_test = fqrs_tuple
 
 
 class FECGDataset(Dataset):
-    """
-    自定义数据集类，用于加载和预处理FECG数据。
-    """
+    # 这个类的代码现在是完全正确的，无需再修改
     def __init__(self, data_item, train=True):
-        """
-        初始化数据集。
-        """
         super(FECGDataset, self).__init__()
         self.train = train
         
         if self.train:
-            # 在训练模式下，使用训练数据集
             self.signals = data_item.X_train
             self.labels = data_item.Y_train
-            self.fqrs_rpeaks = data_item.fqrs_train # 现在 data_item 有 fqrs_train 了
+            self.fqrs_rpeaks = data_item.fqrs_train
             print(f"数据集已初始化为 [训练模式]，包含 {len(self.signals)} 个样本。")
         else:
-            # 在测试模式下，使用测试数据集
             self.signals = data_item.X_test
             self.labels = data_item.Y_test
-            self.fqrs_rpeaks = data_item.fqrs_test # 同样，为测试集也准备好 fqrs
+            self.fqrs_rpeaks = data_item.fqrs_test
             print(f"数据集已初始化为 [测试模式]，包含 {len(self.signals)} 个样本。")
 
     def __len__(self):
-        """返回数据集中的样本总数。"""
         return len(self.signals)
 
     def __getitem__(self, index):
-        """
-        根据索引获取一个数据样本。
-        """
         if self.train:
             return self.get_train_item(index)
         else:
             return self.get_test_item(index)
-
-    # get_train_item, get_test_item, find_normalization_range 等方法保持不变...
+    
+    # get_train_item, get_test_item, 和 find_normalization_range 方法保持不变
     def get_train_item(self, index):
-        """获取并处理一个训练样本。"""
         xx = self.signals[index, :, :]
         yy = self.labels[index, :, :]
         fqrs = self.fqrs_rpeaks[index]
@@ -131,7 +80,6 @@ class FECGDataset(Dataset):
                 torch.from_numpy(BIAS_signal_norm).type(torch.FloatTensor))
 
     def get_test_item(self, index):
-        """获取并处理一个测试样本。"""
         original_xx = self.signals[index, :, :]
         original_yy = self.labels[index, :, :]
         scaler_standard = MinMaxScaler(feature_range=(-1, 1), copy=False)
@@ -141,18 +89,16 @@ class FECGDataset(Dataset):
                 torch.tensor(0))
 
     def find_normalization_range(self, xx, fqrs):
-        """一个辅助函数，用于执行寻找归一化范围的逻辑。"""
         t_max = 10000
         t_min = 0
-        if isinstance(fqrs, (list, np.ndarray)) and len(fqrs) > 0: # 增加一个检查，防止fqrs为空
+        if isinstance(fqrs, (list, np.ndarray)) and len(fqrs) > 0:
             for coo in fqrs:
                 start, end = max(coo - 10, 0), min(coo + 10, 127)
-                if start < end: # 确保切片有效
+                if start < end:
                     v_max = np.max(xx[0, start:end])
                     if t_max > v_max:
                         t_max = v_max
                         t_min = np.min(xx[0, start:end])
-        # 如果fqrs为空或无效，返回一个默认范围
         if t_max == 10000:
             return np.min(xx), np.max(xx)
         return t_min, t_max
