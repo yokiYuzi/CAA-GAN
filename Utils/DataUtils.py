@@ -1,5 +1,3 @@
-# Utils/DataUtils.py
-
 import pyedflib
 import numpy as np
 import os
@@ -12,7 +10,7 @@ class DataUtils():
 
     def getFileName(self, index):
         if index < 10:
-            file_name = os.path.join(DATA_ROOT_DIR, 'r0' + str(index) + '.edf')
+            file_name = os.path.join(DATA_ROOT_DIR, 'r' + str(index).zfill(2) + '.edf')
         else:
             file_name = os.path.join(DATA_ROOT_DIR, 'r' + str(index) + '.edf')
         return file_name
@@ -38,15 +36,23 @@ class DataUtils():
         qrs_rpeaks = self.getQRS(ann_name, fecg)
         return ecgAll, fecg, qrs_rpeaks
 
+    # 【核心修正】只修改 getQRS 这一个方法
     def getQRS(self, ann_name, fecg):
-        path = ann_name + '.qrs'
-        if os.path.exists(path) is False:
+        # 修正前 ❌: path = ann_name + '.qrs'
+        # 修正后 ✔️: path = ann_name + '.edf.qrs'
+        path = ann_name + '.edf.qrs'
+        
+        if not os.path.exists(path):
             return None
+            
         qrs_rpeaks = []
         with open(path, "r") as f:
             for line in f:
-                str_time, str_r, str_none, str_r_2 = line.split()
-                qrs_rpeaks.append(int(float(str_time) * 1000))
+                # 使用 more-itertools 或更健壮的分割来处理可能的空行
+                parts = line.split()
+                if len(parts) >= 2: # 确保行中有足够的数据
+                    str_time = parts[0]
+                    qrs_rpeaks.append(int(float(str_time) * 1000))
         return np.array(qrs_rpeaks)
 
     def data2window(self, data, size=128):
@@ -68,8 +74,7 @@ class DataUtils():
             sigDelayed[i, :] = np.roll(sig, i * delay)
         return sigDelayed
 
-# 【新增】一个空的占位符类，用于解决导入错误
+# 一个空的占位符类，用于解决 TrainUtils.py 中的导入依赖错误
 class DataUtils_NIFECGDB():
-    """一个空的占位符类，用于解决 TrainUtils.py 中的导入依赖错误。"""
     def __init__(self):
         pass
