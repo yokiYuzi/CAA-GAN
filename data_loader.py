@@ -49,6 +49,31 @@ class TrainUtils:
 
 
 
+class Data_Loader():
+    def __init__(self, FECG=True):
+        super().__init__()
+        self.trainUtils = TrainUtils()
+
+    def test_trainSignal(self):
+        ecgWindows, fecgWindows,fqrs_rpeaks = self.trainUtils.prepareData(delay=5)
+        X_train, X_test, Y_train, Y_test = self.trainUtils.trainTestSplit(ecgWindows, fecgWindows, len(ecgWindows)-1)
+
+        X_train = np.reshape(X_train, [-1, X_train.shape[2], X_train.shape[1]])
+        X_test = np.reshape(X_test, [-1, X_test.shape[2], X_test.shape[1]])
+        Y_train = np.reshape(Y_train, [-1, Y_train.shape[2], Y_train.shape[1]])
+        Y_test = np.reshape(Y_test, [-1, Y_test.shape[2], Y_test.shape[1]])
+        # print(X_train.shape)
+        
+        
+        return X_train, X_test, Y_train, Y_test, fqrs_rpeaks
+
+class Data_Item():
+    def __init__(self, FECG=True):
+        super().__init__()
+        self.X_train, self.X_test, self.Y_train, self.Y_test, self.fqrs_rpeaks = Data_Loader().test_trainSignal()
+
+    
+    
 class FECGDataset(Dataset):
     """
     自定义数据集类，用于加载和预处理FECG数据。
