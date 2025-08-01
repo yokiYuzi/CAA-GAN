@@ -118,12 +118,20 @@ class Trainer(object):
         self.version = config.version
         
         # 创建日志、样本和模型保存路径
-        self.log_path = os.path.join(config.log_path, self.version)
-        self.sample_path = os.path.join(config.sample_path, self.version)
-        self.model_save_path = os.path.join(config.model_save_path, self.version)
-        make_folder(self.log_path)
-        make_folder(self.sample_path)
-        make_folder(self.model_save_path)
+        self.log_path_base = config.log_path
+        self.sample_path_base = config.sample_path
+        self.model_save_path_base = config.model_save_path
+        self.version = config.version
+        
+        # 步骤 1: 先调用 make_folder 创建目录，分别传入基础路径和版本号
+        make_folder(self.log_path_base, self.version)
+        make_folder(self.sample_path_base, self.version)
+        make_folder(self.model_save_path_base, self.version)
+
+        # 步骤 2: 然后再定义完整的路径属性供后续使用
+        self.log_path = os.path.join(self.log_path_base, self.version)
+        self.sample_path = os.path.join(self.sample_path_base, self.version)
+        self.model_save_path = os.path.join(self.model_save_path_base, self.version)
 
         # 构建模型
         self.build_model()
