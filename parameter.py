@@ -21,7 +21,7 @@ def get_parameters():
     # Training setting
     g_ratio = 1
     d_ratio = 1
-    parser.add_argument('--total_step', type=int, default=1000, help='how many times to update the generator')
+    parser.add_argument('--total_step', type=int, default=5000, help='how many times to update the generator')
     parser.add_argument('--d_iters', type=float, default=5)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--num_workers', type=int, default=2)
